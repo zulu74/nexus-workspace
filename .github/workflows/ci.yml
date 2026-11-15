@@ -101,6 +101,7 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.service }}.sarif
           severity: CRITICAL,HIGH
+          ignore-unfixed: true # don't fail the build on OS-level CVEs with no patch available yet — those can't be remediated by us and would make every build red forever
           exit-code: 1
 
       - name: Upload Trivy SARIF
