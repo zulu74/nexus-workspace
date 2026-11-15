@@ -1,0 +1,54 @@
+# All five services, wired for real SSO: identity-service is the only
+# one that ever sees a password; everything else validates the JWT it
+# issues. Swap NEXUS_JWT_SECRET for a real secret (and HS256 for
+# RS256 + JWKS) before this goes anywhere near production — see README.
+
+x-jwt-secret: &jwt-secret
+  NEXUS_JWT_SECRET: ${NEXUS_JWT_SECRET:-dev-secret-change-me}
+
+services:
+  identity-service:
+    build: ./identity-service
+    ports: ["8001:8001"]
+    environment:
+      <<: *jwt-secret
+      IDENTITY_DB_PATH: /data/identity.db
+    volumes: ["identity-data:/data"]
+
+  admin-console:
+    build: ./admin-console
+    ports: ["8000:80"]
+    depends_on: [identity-service]
+
+  chat-service:
+    build: ./chat-service
+    ports: ["8002:8002"]
+    environment:
+      <<: *jwt-secret
+      CHAT_DB_PATH: /data/chat.db
+    volumes: ["chat-data:/data"]
+    depends_on: [identity-service]
+
+  docs-service:
+    build: ./docs-service
+    ports: ["8003:8003"]
+    environment:
+      <<: *jwt-secret
+      DOCS_DB_PATH: /data/docs.db
+    volumes: ["docs-data:/data"]
+    depends_on: [identity-service]
+
+  mail-service:
+    build: ./mail-service
+    ports: ["8004:8004"]
+    environment:
+      <<: *jwt-secret
+      MAIL_DB_PATH: /data/mail.db
+    volumes: ["mail-data:/data"]
+    depends_on: [identity-service]
+
+volumes:
+  identity-data:
+  chat-data:
+  docs-data:
+  mail-data:

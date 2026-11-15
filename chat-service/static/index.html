@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus Chat</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --panel-2:#273449; --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --border:#334155; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  #authScreen { max-width: 360px; margin: 100px auto; background: var(--panel); padding: 24px; border-radius: 10px; border:1px solid var(--border); }
+  input { width:100%; padding:9px 10px; margin: 6px 0 12px; background:#0b1220; border:1px solid var(--border); border-radius:6px; color: var(--text); }
+  label { font-size:12px; color: var(--muted); }
+  button { background: var(--accent); color:#06212f; border:none; padding:10px 16px; border-radius:6px; font-weight:600; cursor:pointer; }
+  .error { color:#f87171; font-size:13px; margin-top:8px; }
+  .hidden { display:none !important; }
+  .layout { display:flex; height:100vh; }
+  aside { width: 220px; background: var(--panel); border-right:1px solid var(--border); padding: 16px 0; }
+  aside h3 { padding: 0 16px; color: var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .channel-item { padding: 8px 16px; cursor:pointer; color: var(--muted); font-size:14px; }
+  .channel-item.active { background: var(--panel-2); color: var(--text); border-left:3px solid var(--accent); }
+  main { flex:1; display:flex; flex-direction:column; }
+  header { padding: 14px 20px; border-bottom:1px solid var(--border); font-weight:600; }
+  #messages { flex:1; overflow-y:auto; padding: 16px 20px; }
+  .msg { margin-bottom: 10px; font-size:14px; }
+  .msg .who { color: var(--accent); font-weight:600; margin-right:6px; }
+  .msg .time { color: var(--muted); font-size:11px; margin-left:6px; }
+  .system { color: var(--muted); font-style: italic; font-size: 13px; margin: 6px 0; }
+  #composer { display:flex; padding: 14px 20px; border-top:1px solid var(--border); gap:8px; }
+  #composer input { margin:0; flex:1; }
+</style>
+</head>
+<body>
+
+<div id="authScreen">
+  <h2 style="margin-top:0">Nexus Chat</h2>
+  <label>Email</label><input id="email" type="email">
+  <label>Password</label><input id="password" type="password">
+  <button onclick="login()">Sign in</button>
+  <div id="loginError" class="error"></div>
+</div>
+
+<div id="app" class="hidden layout">
+  <aside>
+    <h3>Channels</h3>
+    <div id="channelList"></div>
+  </aside>
+  <main>
+    <header id="channelHeader"></header>
+    <div id="messages"></div>
+    <div id="composer">
+      <input id="composerInput" placeholder="Message #general" onkeydown="if(event.key==='Enter') sendMessage()">
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </main>
+</div>
+
+<script>
+const IDENTITY_API = window.NEXUS_IDENTITY_API || "http://localhost:8001";
+const CHAT_API = window.NEXUS_CHAT_API || "http://localhost:8002";
+const CHAT_WS = CHAT_API.replace("http", "ws");
+
+let token = localStorage.getItem("nexus_chat_token");
+let currentChannel = null;
+let socket = null;
+
+async function login() {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  try {
+    const res = await fetch(IDENTITY_API + "/auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(data.detail));
+    if (data.mfa_required) throw new Error("This account requires MFA — chat UI doesn't collect a code yet, use a non-MFA account for this demo.");
+    token = data.access_token;
+    localStorage.setItem("nexus_chat_token", token);
+    enterApp();
+  } catch (e) {
+    document.getElementById("loginError").textContent = "Login failed: " + e.message;
+  }
+}
+
+async function enterApp() {
+  document.getElementById("authScreen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  const res = await fetch(CHAT_API + "/channels", { headers: { Authorization: "Bearer " + token } });
+  const channels = await res.json();
+  document.getElementById("channelList").innerHTML = channels.map(c =>
+    `<div class="channel-item" data-id="${c.id}" onclick="openChannel('${c.id}','${c.name}')"># ${c.name}</div>`
+  ).join("");
+  if (channels.length) openChannel(channels[0].id, channels[0].name);
+}
+
+async function openChannel(id, name) {
+  currentChannel = id;
+  document.querySelectorAll(".channel-item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+  document.getElementById("channelHeader").textContent = "# " + name;
+  document.getElementById("composerInput").placeholder = "Message #" + name;
+
+  const res = await fetch(`${CHAT_API}/channels/${id}/messages`, { headers: { Authorization: "Bearer " + token } });
+  const history = await res.json();
+  const box = document.getElementById("messages");
+  box.innerHTML = history.map(m => renderMessage({ type: "message", ...m })).join("");
+  box.scrollTop = box.scrollHeight;
+
+  if (socket) socket.close();
+  socket = new WebSocket(`${CHAT_WS}/ws/${id}?token=${token}`);
+  socket.onmessage = (ev) => {
+    const data = JSON.parse(ev.data);
+    box.insertAdjacentHTML("beforeend", renderMessage(data));
+    box.scrollTop = box.scrollHeight;
+  };
+}
+
+function renderMessage(m) {
+  const time = new Date(m.created_at).toLocaleTimeString();
+  if (m.type === "system") {
+    return `<div class="system">${m.content} · ${time}</div>`;
+  }
+  return `<div class="msg"><span class="who">${m.user_email}</span>${m.content}<span class="time">${time}</span></div>`;
+}
+
+function sendMessage() {
+  const input = document.getElementById("composerInput");
+  if (!input.value.trim() || !socket || socket.readyState !== WebSocket.OPEN) return;
+  socket.send(input.value);
+  input.value = "";
+}
+
+if (token) enterApp().catch(() => { localStorage.removeItem("nexus_chat_token"); });
+</script>
+</body>
+</html>

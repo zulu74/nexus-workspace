@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus Mail</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --panel-2:#273449; --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --border:#334155; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  #authScreen { max-width: 360px; margin: 100px auto; background: var(--panel); padding: 24px; border-radius: 10px; border:1px solid var(--border); }
+  input, textarea { width:100%; padding:9px 10px; margin: 6px 0 12px; background:#0b1220; border:1px solid var(--border); border-radius:6px; color: var(--text); font-family: inherit; }
+  textarea { min-height: 160px; resize: vertical; }
+  label { font-size:12px; color: var(--muted); }
+  button { background: var(--accent); color:#06212f; border:none; padding:9px 14px; border-radius:6px; font-weight:600; cursor:pointer; font-size:13px; }
+  button.secondary { background: var(--panel-2); color: var(--text); border:1px solid var(--border); }
+  .error { color:#f87171; font-size:13px; margin-top:8px; }
+  .ok { color:#22c55e; font-size:13px; margin-top:8px; }
+  .hidden { display:none !important; }
+  .layout { display:flex; height:100vh; }
+  aside { width: 160px; background: var(--panel); border-right:1px solid var(--border); padding: 16px 0; }
+  aside button.tab { display:block; width:100%; text-align:left; background:none; border:none; color: var(--muted); padding: 10px 20px; cursor:pointer; }
+  aside button.tab.active { color: var(--text); background: var(--panel-2); border-left:3px solid var(--accent); }
+  .list-pane { width: 320px; border-right:1px solid var(--border); overflow-y:auto; }
+  .mail-item { padding: 12px 16px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .mail-item.unread { font-weight:700; }
+  .mail-item .from { font-size:13px; }
+  .mail-item .subject { font-size:13px; color: var(--muted); }
+  .mail-item .time { font-size:11px; color:#64748b; }
+  main { flex:1; padding: 24px 28px; overflow-y:auto; }
+  #composeBtn { margin: 12px 20px; width: calc(100% - 40px); }
+</style>
+</head>
+<body>
+
+<div id="authScreen">
+  <h2 style="margin-top:0">Nexus Mail</h2>
+  <label>Email</label><input id="email" type="email">
+  <label>Password</label><input id="password" type="password">
+  <button onclick="login()">Sign in</button>
+  <div id="loginError" class="error"></div>
+</div>
+
+<div id="app" class="hidden layout">
+  <aside>
+    <button id="composeBtn" onclick="showCompose()">Compose</button>
+    <button class="tab active" data-folder="inbox" onclick="switchFolder('inbox')">Inbox</button>
+    <button class="tab" data-folder="sent" onclick="switchFolder('sent')">Sent</button>
+  </aside>
+  <div class="list-pane" id="listPane"></div>
+  <main id="mainPane">
+    <p style="color:var(--muted)">Select a message, or compose a new one.</p>
+  </main>
+</div>
+
+<script>
+const IDENTITY_API = window.NEXUS_IDENTITY_API || "http://localhost:8001";
+const MAIL_API = window.NEXUS_MAIL_API || "http://localhost:8004";
+
+let token = localStorage.getItem("nexus_mail_token");
+let folder = "inbox";
+
+async function login() {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  try {
+    const res = await fetch(IDENTITY_API + "/auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(data.detail));
+    if (data.mfa_required) throw new Error("This account requires MFA — not collected by this demo UI.");
+    token = data.access_token;
+    localStorage.setItem("nexus_mail_token", token);
+    enterApp();
+  } catch (e) {
+    document.getElementById("loginError").textContent = "Login failed: " + e.message;
+  }
+}
+
+function authHeaders(extra = {}) { return { Authorization: "Bearer " + token, ...extra }; }
+
+async function enterApp() {
+  document.getElementById("authScreen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  await loadList();
+}
+
+function switchFolder(f) {
+  folder = f;
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.folder === f));
+  loadList();
+}
+
+async function loadList() {
+  const res = await fetch(`${MAIL_API}/mail/${folder}`, { headers: authHeaders() });
+  const mails = await res.json();
+  const other = folder === "inbox" ? "from_email" : "to_email";
+  document.getElementById("listPane").innerHTML = mails.map(m => `
+    <div class="mail-item ${folder === 'inbox' && !m.is_read ? 'unread' : ''}" onclick="openMail('${m.id}', ${JSON.stringify(m).replace(/"/g, '&quot;')})">
+      <div class="from">${m[other]}</div>
+      <div class="subject">${m.subject}</div>
+      <div class="time">${new Date(m.created_at).toLocaleString()}</div>
+    </div>`).join("") || '<p style="padding:16px;color:var(--muted)">Nothing here yet.</p>';
+}
+
+async function openMail(id, mail) {
+  if (folder === "inbox" && !mail.is_read) {
+    await fetch(`${MAIL_API}/mail/${id}/read`, { method: "POST", headers: authHeaders() });
+    await loadList();
+  }
+  document.getElementById("mainPane").innerHTML = `
+    <h2 style="margin-top:0">${mail.subject}</h2>
+    <p style="color:var(--muted);font-size:13px">From: ${mail.from_email} &nbsp;→&nbsp; To: ${mail.to_email}<br>${new Date(mail.created_at).toLocaleString()}</p>
+    <div style="white-space:pre-wrap;line-height:1.5;margin-top:16px">${mail.body}</div>
+  `;
+}
+
+function showCompose() {
+  document.getElementById("mainPane").innerHTML = `
+    <h2 style="margin-top:0">New message</h2>
+    <label>To</label><input id="c_to" type="email">
+    <label>Subject</label><input id="c_subject">
+    <label>Body</label><textarea id="c_body"></textarea>
+    <button onclick="sendCompose()">Send</button>
+    <div id="composeMsg"></div>
+  `;
+}
+
+async function sendCompose() {
+  const body = {
+    to_email: document.getElementById("c_to").value,
+    subject: document.getElementById("c_subject").value,
+    body: document.getElementById("c_body").value,
+  };
+  const msgEl = document.getElementById("composeMsg");
+  try {
+    await fetch(MAIL_API + "/mail/send", {
+      method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body),
+    });
+    msgEl.innerHTML = '<div class="ok">Sent.</div>';
+    switchFolder("sent");
+  } catch (e) {
+    msgEl.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+if (token) enterApp().catch(() => { localStorage.removeItem("nexus_mail_token"); });
+</script>
+</body>
+</html>

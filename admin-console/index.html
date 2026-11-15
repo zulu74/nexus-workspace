@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus Admin Console</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --text: #e2e8f0;
+    --muted: #94a3b8; --accent: #38bdf8; --accent-2: #22c55e; --danger: #f87171;
+    --border: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:14px 24px;
+            background: var(--panel); border-bottom:1px solid var(--border); }
+  .topbar .brand { font-weight:700; font-size:18px; letter-spacing:.3px; }
+  .topbar .brand span { color: var(--accent); }
+  #whoami { color: var(--muted); font-size: 13px; }
+  .layout { display:flex; min-height: calc(100vh - 54px); }
+  nav { width: 220px; background: var(--panel); border-right:1px solid var(--border); padding: 16px 0; }
+  nav button { display:block; width:100%; text-align:left; padding: 12px 24px; background:none; border:none;
+               color: var(--muted); font-size:14px; cursor:pointer; }
+  nav button.active { color: var(--text); background: var(--panel-2); border-left: 3px solid var(--accent); }
+  main { flex:1; padding: 28px 32px; max-width: 900px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card { background: var(--panel); border:1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom:16px; }
+  input, select { width:100%; padding:9px 10px; margin: 6px 0 12px; background: #0b1220; border:1px solid var(--border);
+          border-radius:6px; color: var(--text); font-size: 14px; }
+  label { font-size: 12px; color: var(--muted); }
+  button.btn { background: var(--accent); color:#06212f; border:none; padding:10px 16px; border-radius:6px;
+               font-weight:600; cursor:pointer; font-size:14px; }
+  button.btn.secondary { background: var(--panel-2); color: var(--text); border:1px solid var(--border); }
+  button.btn.danger { background: var(--danger); color:#2a0a0a; }
+  table { width:100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align:left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight:600; }
+  .pill { display:inline-block; padding: 2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  .pill.admin { background: rgba(56,189,248,.15); color: var(--accent); }
+  .pill.member { background: rgba(148,163,184,.15); color: var(--muted); }
+  .pill.on { background: rgba(34,197,94,.15); color: var(--accent-2); }
+  .pill.off { background: rgba(248,113,113,.15); color: var(--danger); }
+  .error { color: var(--danger); font-size: 13px; margin: 8px 0; }
+  .ok { color: var(--accent-2); font-size: 13px; margin: 8px 0; }
+  #authScreen { max-width: 380px; margin: 80px auto; }
+  .hidden { display: none !important; }
+  code { background:#0b1220; padding:2px 6px; border-radius:4px; font-size: 12px; word-break: break-all; }
+  .toggle-row { display:flex; align-items:center; justify-content:space-between; }
+</style>
+</head>
+<body>
+
+<div id="authScreen" class="card">
+  <h1>Nexus Workspace</h1>
+  <p class="sub">Sign in or create a new organization.</p>
+
+  <div id="loginForm">
+    <label>Email</label>
+    <input id="loginEmail" type="email" placeholder="you@company.com">
+    <label>Password</label>
+    <input id="loginPassword" type="password">
+    <div id="mfaRow" class="hidden">
+      <label>MFA code</label>
+      <input id="loginMfa" type="text" placeholder="6-digit code">
+    </div>
+    <button class="btn" onclick="login()">Sign in</button>
+    <button class="btn secondary" onclick="showSignup()">Create organization instead</button>
+    <div id="loginError" class="error"></div>
+  </div>
+
+  <div id="signupForm" class="hidden">
+    <label>Organization name</label>
+    <input id="su_orgName" placeholder="Acme Corp">
+    <label>Organization domain</label>
+    <input id="su_orgDomain" placeholder="acme.com">
+    <label>Your name</label>
+    <input id="su_name" placeholder="James Zulu">
+    <label>Your email</label>
+    <input id="su_email" type="email" placeholder="you@acme.com">
+    <label>Password</label>
+    <input id="su_password" type="password">
+    <button class="btn" onclick="signup()">Create organization</button>
+    <button class="btn secondary" onclick="showLogin()">Back to sign in</button>
+    <div id="signupError" class="error"></div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="brand">Nexus <span>Admin Console</span></div>
+    <div id="whoami"></div>
+  </div>
+  <div class="layout">
+    <nav>
+      <button class="navbtn active" data-tab="users">Users</button>
+      <button class="navbtn" data-tab="policy">Security Policy</button>
+      <button class="navbtn" data-tab="audit">Audit Log</button>
+      <button class="navbtn" data-tab="mfa">My MFA</button>
+      <button class="navbtn" onclick="logout()" style="margin-top:20px;color:var(--danger)">Sign out</button>
+    </nav>
+    <main>
+      <section id="tab-users">
+        <h1>Users</h1>
+        <p class="sub">Everyone in your organization, managed from one place.</p>
+        <div class="card">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>MFA</th><th>Status</th><th></th></tr></thead>
+            <tbody id="usersTable"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">Add user</h3>
+          <label>Full name</label><input id="nu_name">
+          <label>Email</label><input id="nu_email" type="email">
+          <label>Temporary password</label><input id="nu_password" type="password">
+          <label>Role</label>
+          <select id="nu_role"><option value="member">member</option><option value="admin">admin</option></select>
+          <button class="btn" onclick="createUser()">Create user</button>
+          <div id="createUserMsg"></div>
+        </div>
+      </section>
+
+      <section id="tab-policy" class="hidden">
+        <h1>Security Policy</h1>
+        <p class="sub">Organization-wide controls, enforced by identity service — not a setting a user can bypass.</p>
+        <div class="card toggle-row">
+          <div>
+            <strong>Require MFA for all users</strong>
+            <div class="sub" style="margin:4px 0 0">When enabled, every sign-in requires a verified authenticator code.</div>
+          </div>
+          <button class="btn" id="mfaPolicyBtn" onclick="toggleMfaPolicy()">Loading…</button>
+        </div>
+      </section>
+
+      <section id="tab-audit" class="hidden">
+        <h1>Audit Log</h1>
+        <p class="sub">Last 200 security-relevant events for your organization — signups, logins, failures, admin actions.</p>
+        <div class="card">
+          <table>
+            <thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Detail</th><th>IP</th></tr></thead>
+            <tbody id="auditTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-mfa" class="hidden">
+        <h1>My MFA</h1>
+        <p class="sub">Protect your own account with a time-based authenticator code (Google Authenticator, Authy, 1Password, etc.)</p>
+        <div class="card">
+          <button class="btn" onclick="enrollMfa()">Generate MFA secret</button>
+          <div id="mfaEnrollResult" style="margin-top:14px"></div>
+          <div id="mfaVerifyRow" class="hidden" style="margin-top:14px">
+            <label>Enter the 6-digit code from your authenticator app</label>
+            <input id="mfaVerifyCode">
+            <button class="btn" onclick="verifyMfa()">Enable MFA</button>
+          </div>
+          <div id="mfaMsg"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+// Point this at wherever identity-service is actually running.
+// In docker-compose, the browser still needs a host-reachable URL, not
+// the internal service name — so this is the exposed host port.
+const API_BASE = window.NEXUS_IDENTITY_API || "http://localhost:8001";
+
+function getToken() { return localStorage.getItem("nexus_token"); }
+function setToken(t) { localStorage.setItem("nexus_token", t); }
+function clearToken() { localStorage.removeItem("nexus_token"); }
+
+async function api(path, options = {}) {
+  const headers = options.headers || {};
+  headers["Content-Type"] = "application/json";
+  const token = getToken();
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(API_BASE + path, { ...options, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : res.statusText);
+  return data;
+}
+
+function showLogin() {
+  document.getElementById("signupForm").classList.add("hidden");
+  document.getElementById("loginForm").classList.remove("hidden");
+}
+function showSignup() {
+  document.getElementById("loginForm").classList.add("hidden");
+  document.getElementById("signupForm").classList.remove("hidden");
+}
+
+async function login() {
+  const email = document.getElementById("loginEmail").value;
+  const password = document.getElementById("loginPassword").value;
+  const mfa_code = document.getElementById("loginMfa").value || undefined;
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+  try {
+    const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password, mfa_code }) });
+    if (data.mfa_required) {
+      document.getElementById("mfaRow").classList.remove("hidden");
+      errEl.textContent = "Enter your MFA code to continue.";
+      return;
+    }
+    setToken(data.access_token);
+    await enterApp();
+  } catch (e) {
+    errEl.textContent = "Login failed: " + e.message;
+  }
+}
+
+async function signup() {
+  const body = {
+    org_name: document.getElementById("su_orgName").value,
+    org_domain: document.getElementById("su_orgDomain").value,
+    admin_full_name: document.getElementById("su_name").value,
+    admin_email: document.getElementById("su_email").value,
+    admin_password: document.getElementById("su_password").value,
+  };
+  const errEl = document.getElementById("signupError");
+  errEl.textContent = "";
+  try {
+    const data = await api("/auth/signup", { method: "POST", body: JSON.stringify(body) });
+    setToken(data.access_token);
+    await enterApp();
+  } catch (e) {
+    errEl.textContent = "Could not create organization: " + e.message;
+  }
+}
+
+function logout() {
+  clearToken();
+  document.getElementById("app").classList.add("hidden");
+  document.getElementById("authScreen").classList.remove("hidden");
+}
+
+async function enterApp() {
+  document.getElementById("authScreen").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  const me = await api("/auth/me");
+  document.getElementById("whoami").textContent = `${me.full_name} (${me.role}) · ${me.email}`;
+  await Promise.all([loadUsers(), loadAudit()]);
+}
+
+async function loadUsers() {
+  const users = await api("/admin/users");
+  document.getElementById("usersTable").innerHTML = users.map(u => `
+    <tr>
+      <td>${u.full_name}</td>
+      <td>${u.email}</td>
+      <td><span class="pill ${u.role}">${u.role}</span></td>
+      <td><span class="pill ${u.mfa_enabled ? 'on' : 'off'}">${u.mfa_enabled ? 'enabled' : 'disabled'}</span></td>
+      <td><span class="pill ${u.is_active ? 'on' : 'off'}">${u.is_active ? 'active' : 'deactivated'}</span></td>
+      <td>${u.is_active ? `<button class="btn danger" style="padding:4px 10px;font-size:12px" onclick="deactivateUser('${u.id}')">Deactivate</button>` : ''}</td>
+    </tr>`).join("");
+}
+
+async function createUser() {
+  const body = {
+    full_name: document.getElementById("nu_name").value,
+    email: document.getElementById("nu_email").value,
+    password: document.getElementById("nu_password").value,
+    role: document.getElementById("nu_role").value,
+  };
+  const msgEl = document.getElementById("createUserMsg");
+  try {
+    await api("/admin/users", { method: "POST", body: JSON.stringify(body) });
+    msgEl.innerHTML = '<div class="ok">User created.</div>';
+    await loadUsers();
+  } catch (e) {
+    msgEl.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+async function deactivateUser(id) {
+  if (!confirm("Deactivate this user? They will no longer be able to sign in.")) return;
+  await api("/admin/users/" + id, { method: "DELETE" });
+  await loadUsers();
+}
+
+async function loadAudit() {
+  const rows = await api("/admin/audit-log");
+  document.getElementById("auditTable").innerHTML = rows.map(r => `
+    <tr>
+      <td>${new Date(r.created_at).toLocaleString()}</td>
+      <td>${r.actor_email || "—"}</td>
+      <td>${r.event}</td>
+      <td>${r.detail || ""}</td>
+      <td>${r.ip_address || ""}</td>
+    </tr>`).join("");
+}
+
+let currentPolicy = null;
+async function loadPolicy() {
+  const org = await api("/admin/org");
+  currentPolicy = org.require_mfa;
+  const btn = document.getElementById("mfaPolicyBtn");
+  btn.textContent = currentPolicy ? "Disable org-wide MFA" : "Enable org-wide MFA";
+}
+
+async function toggleMfaPolicy() {
+  const next = !currentPolicy;
+  await api("/admin/org/policy", { method: "PATCH", body: JSON.stringify({ require_mfa: next }) });
+  await loadPolicy();
+  await loadAudit();
+}
+
+async function enrollMfa() {
+  const data = await api("/auth/mfa/enroll", { method: "POST" });
+  document.getElementById("mfaEnrollResult").innerHTML = `
+    <p>Scan this in your authenticator app, or enter the secret manually:</p>
+    <p><code>${data.secret}</code></p>
+    <p class="sub">otpauth URL: <code>${data.otpauth_url}</code></p>
+  `;
+  document.getElementById("mfaVerifyRow").classList.remove("hidden");
+}
+
+async function verifyMfa() {
+  const code = document.getElementById("mfaVerifyCode").value;
+  const msgEl = document.getElementById("mfaMsg");
+  try {
+    await api("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ code }) });
+    msgEl.innerHTML = '<div class="ok">MFA enabled for your account.</div>';
+    await loadUsers();
+  } catch (e) {
+    msgEl.innerHTML = `<div class="error">${e.message}</div>`;
+  }
+}
+
+document.querySelectorAll(".navbtn[data-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".navbtn[data-tab]").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll("main > section").forEach(s => s.classList.add("hidden"));
+    document.getElementById("tab-" + btn.dataset.tab).classList.remove("hidden");
+    if (btn.dataset.tab === "policy") loadPolicy();
+  });
+});
+
+// Auto-login if we already have a token from a previous session.
+if (getToken()) {
+  enterApp().catch(() => { clearToken(); });
+}
+</script>
+</body>
+</html>
