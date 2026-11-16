@@ -4,7 +4,7 @@ WORKDIR /app
 # the base image tag to already be current.
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools && pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY static ./static
 ENV MAIL_DB_PATH=/data/mail.db
