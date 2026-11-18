@@ -82,6 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-and-smoke-test]
     strategy:
+      fail-fast: false # one service's scan failing shouldn't cancel the other four before we even see their results
       matrix:
         service: [identity-service, chat-service, docs-service, mail-service, admin-console]
     steps:
@@ -89,6 +90,20 @@ jobs:
 
       - name: Build image
         run: docker build -t nexus-${{ matrix.service }}:ci ./${{ matrix.service }}
+
+      - name: Print human-readable vulnerability table to the job log
+        # Same scan, same filters, but printed as plain text so findings can
+        # be read and copied straight from this step's log instead of
+        # having to dig through the Security tab's SARIF-backed UI.
+        # exit-code 0 here on purpose: this step is for visibility only,
+        # the step below is the one that actually fails the build.
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: nexus-${{ matrix.service }}:ci
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 0
 
       - name: Run Trivy vulnerability scanner
         # Pinned to 0.35.0 specifically: this is the first immutable release
