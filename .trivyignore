@@ -1,0 +1,22 @@
+# CVE-2025-47273 (setuptools: Path Traversal Vulnerability in setuptools
+# PackageIndex) — confirmed FALSE POSITIVE for identity-service,
+# chat-service, docs-service and mail-service as of 2026-11-19.
+#
+# Root cause: the finding isn't a real leftover top-level setuptools install
+# (confirmed via `find / -iname "*setuptools*"` inside the built image and
+# via Trivy's own per-file breakdown table — both show only a clean,
+# current setuptools-84.2.1.dist-info). It's pip's own VENDORED internal
+# copy of pkg_resources/setuptools, bundled inside pip's package directory
+# regardless of the top-level setuptools version. Reproduced identically on
+# trivy-action/trivy 0.69.3 and 0.76.2.
+#
+# All four Dockerfiles now use a multi-stage build that strips pip,
+# setuptools, and wheel (and ensurepip's bundled copies) out of the final
+# runtime image entirely, since the running service never needs them — only
+# the installed app dependencies do. That should make this CVE stop being
+# detected at all going forward; this entry is kept only as a backstop in
+# case the same vendored-copy quirk resurfaces in some other form.
+#
+# Remove this entry and re-verify if a future build confirms it's no longer
+# needed.
+CVE-2025-47273

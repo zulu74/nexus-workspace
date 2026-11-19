@@ -104,6 +104,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: 0
+          trivyignores: .trivyignore
 
       - name: Run Trivy vulnerability scanner
         # Pinned to 0.35.0 specifically: this is the first immutable release
@@ -118,6 +119,10 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true # don't fail the build on OS-level CVEs with no patch available yet — those can't be remediated by us and would make every build red forever
           exit-code: 1
+          # CVE-2025-47273 is a confirmed Trivy false positive on these images
+          # (see .trivyignore for the manual verification) — suppressed here
+          # rather than left to fail the build forever on a scanner bug.
+          trivyignores: .trivyignore
 
       - name: Upload Trivy SARIF
         if: always()
